@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 
 
-map_location=torch.device('cpu')
+map_location= torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 ####################################################################
@@ -129,7 +129,7 @@ torch.manual_seed(seed)
 parser = argparse.ArgumentParser()
 args = parser.parse_args('')
 
-args.device = torch.device('cpu')
+args.device = 'cuda' if torch.cuda.is_available else 'cpu'
 
 # ===== data loading ==== #
 args.batch_size = 4
@@ -271,7 +271,7 @@ if uploaded_file:
         st.markdown('**график детектирования аномалий**')
         dataset, seq_len, n_features, df=create_dataset(data)
 
-        model = torch.load('DPump.pth', map_location=torch.device('cpu'))
+        model = torch.load('DPump.pth', map_location=map_location)
         model = model.to(args.device)
         predictions, losses=predict(model, dataset)
         Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=1.0, value=0.03, step=0.01)
