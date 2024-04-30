@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+map_location=torch.device('cpu')
 
 
 ####################################################################
