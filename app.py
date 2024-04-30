@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-
+device=torch.device('cpu')
 
 
 ####################################################################
@@ -137,6 +137,7 @@ args.batch_size = 4
 args.n_layers = 1
 args.embedding_dim = 128
 
+args.device=torch.device('cpu')
 
 # ==== regularization ==== #
 args.dropout = 0
