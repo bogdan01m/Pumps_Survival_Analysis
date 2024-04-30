@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+plotly_express
+torch
+numpy
+pandas
+seaborn
+matplotlib
+argparse
+scikit-learn
