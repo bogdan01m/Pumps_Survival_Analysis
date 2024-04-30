@@ -129,7 +129,7 @@ torch.manual_seed(seed)
 parser = argparse.ArgumentParser()
 args = parser.parse_args('')
 
-args.device = 'cuda' if torch.cuda.is_available else 'cpu'
+args.device = torch.device('cpu')
 
 # ===== data loading ==== #
 args.batch_size = 4
