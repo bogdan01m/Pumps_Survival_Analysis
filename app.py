@@ -10,8 +10,6 @@ import matplotlib.pyplot as plt
 from torch import nn, optim
 import torch.nn.functional as F
 import argparse
-import time
-from tqdm import tqdm
 import os
 from scipy.fft import fft
 from sklearn.preprocessing import MinMaxScaler
