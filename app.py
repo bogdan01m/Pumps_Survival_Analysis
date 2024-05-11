@@ -160,7 +160,7 @@ args.batch_size = 1
 
 # ==== model capacity ==== #
 args.n_layers = 1
-args.embedding_dim = 256
+args.embedding_dim = 128
 
 
 # ==== regularization ==== #
