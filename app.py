@@ -10,9 +10,13 @@ import matplotlib.pyplot as plt
 from torch import nn, optim
 import torch.nn.functional as F
 import argparse
+import time
+from tqdm import tqdm
 import os
 from scipy.fft import fft
 from sklearn.preprocessing import MinMaxScaler
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -166,7 +170,7 @@ args.use_bn = False  # batch normalization
 
 # ==== optimizer & training  # ====
 args.lr = 0.001
-args.epoch = 100
+args.epoch = 180
 ####################################################################
 #Предсказание модели
 ####################################################################
@@ -194,7 +198,7 @@ def predict(model, dataset):
 
 
 def show_data(dataframe):
-    st.header('Данные')
+    # st.header('Данные')
     st.write(dataframe)
 
 def stats(dataframe):
@@ -202,58 +206,91 @@ def stats(dataframe):
     st.write(dataframe.describe())    
     
     
-def interactiveplot(data):
-    x_axis_val = st.selectbox('Select X-Axis Value', options=data.columns)
-    y_axis_val = st.selectbox('Select Y-Axis Value', options=data.columns)
-    col=st.color_picker('Выберите цвет')
-    
-    plot= px.scatter(data, x=x_axis_val, y=y_axis_val)       
-    plot.update_traces(marker=dict(color=col))
-    st.plotly_chart(plot)
 
-    
 def threshold_plot(score):
-    sns.set(style='dark')
-    score.plot(logy=True, figsize=(16,9), color=['blue','red'],linewidth=2.5)
-    # plt.savefig('score_plot.png')
-    plt.grid()
+    # Создаем трассы для графика
+    trace_loss = go.Scatter(
+        x=score.index,
+        y=score['Loss'],
+        mode='lines',
+        name='Loss',
+        line=dict(color='blue')
+    )
     
-def preds_plot(data_loader, model, columns):
+    trace_threshold = go.Scatter(
+        x=score.index,
+        y=[score['Threshold'].iloc[0]] * len(score.index),
+        mode='lines',
+        name='Threshold',
+        line=dict(color='red', dash='dash')
+    )
+    
+    trace_anomalies = go.Scatter(
+        x=score[score['Anomaly']].index,
+        y=score[score['Anomaly']]['Loss'],
+        mode='markers',
+        name='Anomaly',
+        marker=dict(color='darkorange', size=10)
+    )
+    
+    # Собираем все трассы в один график
+    fig = go.Figure(data=[trace_loss, trace_threshold, trace_anomalies])
+    
+    # Обновляем макет графика
+    fig.update_layout(
+        title='График потерь и порогового значения',
+        xaxis_title='Индекс',
+        yaxis_title='Значение',
+        yaxis_type='log',
+        legend_title='Легенда'
+    )
+    
+    # Отображаем график в Streamlit
+    st.plotly_chart(fig, use_container_width=True)
+    
+def preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device):
     combo_data_np = torch.cat([batch for batch in data_loader], dim=0).detach().cpu().numpy()
-
-    # Перестроить данные в подходящий формат для построения графиков
     combo_data_np = combo_data_np.reshape(-1, seq_len, n_features)
 
-    # Получить предсказания модели
     preds = []
     with torch.no_grad():
         model = model.eval()
         for seq_true in data_loader:
-            seq_true = seq_true.to(args.device)
+            seq_true = seq_true.to(device)
             seq_true = seq_true.reshape((-1, seq_len, n_features))
 
             seq_pred = model(seq_true)
             preds.append(seq_pred.cpu().numpy())
     preds = np.concatenate(preds, axis=0)
 
-    # Создать подграфики для каждой фичи
-    fig, axs = plt.subplots(n_features, 1, figsize=(10, n_features * 3))
+    # Создаем макет с подграфиками
+    fig = make_subplots(rows=n_features, cols=1, subplot_titles=columns)
 
-    # Построить график для каждой фичи
+    # Добавляем графики для каждой фичи
     for i in range(n_features):
-        line1, = axs[i].plot(combo_data_np[:, 0, i], color='blueviolet', label='original data')
-        line2, = axs[i].plot(preds[:, 0, i], color='orange', label='predictions')
-        for j in range(1, seq_len):
-            axs[i].plot(combo_data_np[:, j, i], color='blueviolet')
-            axs[i].plot(preds[:, j, i], color='orange')
-        
-        # Использовать названия колонн вместо номеров фич
-        axs[i].set_title(columns[i])
-        axs[i].legend(handles=[line1, line2])
+        fig.add_trace(go.Scatter(
+            x=np.arange(combo_data_np.shape[0]),
+            y=combo_data_np[:, :, i].flatten(),
+            mode='lines',
+            name='Original',
+            line=dict(color='darkgoldenrod'),
+            showlegend=i == 0  # Показываем легенду только для первого графика
+        ), row=i+1, col=1)
 
-    plt.tight_layout()
-    plt.show()
+        fig.add_trace(go.Scatter(
+            x=np.arange(preds.shape[0]),
+            y=preds[:, :, i].flatten(),
+            mode='lines',
+            name='Prediction',
+            line=dict(color='blueviolet'),
+            showlegend=i == 0  # Показываем легенду только для первого графика
+        ), row=i+1, col=1)
 
+    # Обновляем общий макет
+    fig.update_layout(height=300 * n_features, showlegend=True, title_text='Оригинальные данные и востановленные моделью')
+
+    # Отображаем график в Streamlit
+    st.plotly_chart(fig, use_container_width=True)
 
 
 
@@ -261,23 +298,6 @@ def preds_plot(data_loader, model, columns):
 
    
 st.title("DPump")
-st.markdown('## Искуственный интеллект в предсказании выбытия УЭЦН ')
-st.markdown('Модель решает задачу детектирования аномалий во временных рядах')
-st.markdown('Что значит аномалия?')
-st.markdown('**Аномалия- последние 15 дней работы УЭЦН**')
-st.markdown('Такой подход позволяет явно и эффективно реагировать на возможные отклонения и принимать решение о дальнейшей судьбе УЭЦНа')
-st.markdown('Как выглядят аномальные данные?')
-# Загрузка изображения
-image = 'anomalies_and_clean_data.png'
-
-# Отображение изображения
-st.image(image, caption='График аномалий и чистых данных', use_column_width=True)
-st.markdown('Наша нейросеть позволяет детектировать аномалии исходя из данных телеметрии')
-st.markdown('Ввиду особенностей модели, возможны ложные срабатывания при изменении ваших показателей')
-
-st.markdown('**Метрики качества модели:**')
-metrics=pd.read_csv('metrics_test_fft_mse_seq=1.csv')
-st.write(metrics) 
 
 
 st.sidebar.title('Навигация')
@@ -287,7 +307,6 @@ uploaded_file=st.sidebar.file_uploader('Загрузите ваш файл')
 options= st.sidebar.radio('Опции:',
 options=['Главная',
 'Статистика',
-'Интерактивный график данных',
 'Получить предсказание',
 ])
 if uploaded_file:
@@ -310,9 +329,7 @@ if uploaded_file:
     if options =='Статистика':
         st.markdown('**Ваша статистика**')
         stats(data)
-    elif options =='Интерактивный график данных':
-        st.markdown('**Построение графиков на основе данных**')
-        interactiveplot(data)            
+         
  
    
     # elif options =='Гистограмма функции потерь':
@@ -323,7 +340,7 @@ if uploaded_file:
   
     elif options =='Получить предсказание':
         st.markdown('ВНИМАНИЕ: данные, передаваемые в модель должны быть без пропусков')
-        st.markdown('**график детектирования аномалий**')
+        st.markdown('## График разделения аномальных и нормальных значений')
         data_fft, columns=prepare_data(data)  
         data_to_tensor = Create_dataset(data_fft)
         data_loader=data_to_tensor.dataset
@@ -334,19 +351,21 @@ if uploaded_file:
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
-        Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=1.0, value=0.0005, step=0.0002, format='%.4f')
-        Threshold = st.number_input('Введите пороговое значение вручную', min_value=0.0, max_value=1.0, value=Threshold, format='%.4f')
+        Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=2.0, value=1e-5, step=1e-5, format='%.5f')
+        Threshold = st.number_input('Введите пороговое значение вручную', min_value=0.0, max_value=2.0, value=Threshold, format='%.5f')
         score = pd.DataFrame()
         score['Loss'] = losses
         score['Threshold'] = Threshold
         score['Anomaly'] = score['Loss'] > score['Threshold']
+        
+        # Объединяем 'score' с 'data', помещая 'score' слева от последней колонки в 'data'
+        result = pd.concat([score, data], axis=1)
         threshold_plot(score)
-        st.set_option('deprecation.showPyplotGlobalUse', False)
-        st.pyplot()
         # st.set_option('deprecation.showPyplotGlobalUse', False)
-        st.markdown('**результат детектирования аномалий**')
+        st.markdown('**Результат детектирования аномалий**')
         
-        show_data(score) 
-        st.markdown('**Восстановленные данные**')  
+        show_data(result) 
+        st.markdown('**Графики параметров (оригинал и восстановленные)**')  
         
-        st.pyplot(preds_plot(data_loader, model, columns)) 
+        preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device)
+        
