@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-device=torch.device('cpu')
+device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 ####################################################################
@@ -153,7 +153,7 @@ torch.manual_seed(seed)
 parser = argparse.ArgumentParser()
 args = parser.parse_args('')
 
-args.device = torch.device('cpu')
+args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ===== data loading ==== #
 args.batch_size = 1
