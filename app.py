@@ -31,12 +31,15 @@ def prepare_data(data):
        'ProducingGOR_m3_t', 'LiquidViscosity', 'WeightedParticlesFactor_mg_l',
        'MeasureMRM187', 'MeasureMRM188', 'MeasureMRM12', 'MeasureMRM30',
        'MeasureMRM143', 'MeasureMRM144']]
-    data_fft = fft(df)
+    tsvd2D = TruncatedSVD(n_components=2)
+    tsvd2D.fit(df)
+    df_SVD=pd.DataFrame(tsvd2D.transform(df))
+  
     # Создаем экземпляр MinMaxScaler
     scaler = MinMaxScaler()
     columns=df.columns
     # Нормализуем данные в датафре  йме X
-    data_fft = pd.DataFrame(scaler.fit_transform(data_fft.real), columns=columns)
+    data_fft = pd.DataFrame(scaler.fit_transform(df_SVD))
     return data_fft, columns
 class Create_dataset(Dataset):
     def __init__(self, data, seq_len=1, batch_size=1):
@@ -247,49 +250,6 @@ def threshold_plot(score):
     # Отображаем график в Streamlit
     st.plotly_chart(fig, use_container_width=True)
     
-def preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device):
-    combo_data_np = torch.cat([batch for batch in data_loader], dim=0).detach().cpu().numpy()
-    combo_data_np = combo_data_np.reshape(-1, seq_len, n_features)
-
-    preds = []
-    with torch.no_grad():
-        model = model.eval()
-        for seq_true in data_loader:
-            seq_true = seq_true.to(device)
-            seq_true = seq_true.reshape((-1, seq_len, n_features))
-
-            seq_pred = model(seq_true)
-            preds.append(seq_pred.cpu().numpy())
-    preds = np.concatenate(preds, axis=0)
-
-    # Создаем макет с подграфиками
-    fig = make_subplots(rows=n_features, cols=1, subplot_titles=columns)
-
-    # Добавляем графики для каждой фичи
-    for i in range(n_features):
-        fig.add_trace(go.Scatter(
-            x=np.arange(combo_data_np.shape[0]),
-            y=combo_data_np[:, :, i].flatten(),
-            mode='lines',
-            name='Original',
-            line=dict(color='darkgoldenrod'),
-            showlegend=i == 0  # Показываем легенду только для первого графика
-        ), row=i+1, col=1)
-
-        fig.add_trace(go.Scatter(
-            x=np.arange(preds.shape[0]),
-            y=preds[:, :, i].flatten(),
-            mode='lines',
-            name='Prediction',
-            line=dict(color='blueviolet'),
-            showlegend=i == 0  # Показываем легенду только для первого графика
-        ), row=i+1, col=1)
-
-    # Обновляем общий макет
-    fig.update_layout(height=300 * n_features, showlegend=True, title_text='Оригинальные данные и востановленные моделью')
-
-    # Отображаем график в Streamlit
-    st.plotly_chart(fig, use_container_width=True)
 
 
 
@@ -345,8 +305,8 @@ if uploaded_file:
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
         n_features = data_to_tensor.n_features
-        model = torch.load('lstmae_v2.pth', map_location=torch.device('cpu'))
-        model = model.to(torch.device('cpu'))
+        model = torch.load('lstmae_v3.pth', map_location=args.device)
+        
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
@@ -364,7 +324,5 @@ if uploaded_file:
         st.markdown('**Результат детектирования аномалий**')
         
         show_data(result) 
-        st.markdown('**Графики параметров (оригинал и восстановленные)**')  
-        
-        preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device)
+
         
