@@ -14,6 +14,7 @@ import time
 import os
 from scipy.fft import fft
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.decomposition import TruncatedSVD
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import warnings
@@ -305,13 +306,16 @@ if uploaded_file:
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
         n_features = data_to_tensor.n_features
-        model = torch.load('lstmae_v3.pth', map_location=args.device)
-        
+        model = torch.load('lstmae_v3.pth')
+        model = model.to(args.device)
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
-        Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=2.0, value=1e-5, step=1e-5, format='%.5f')
-        Threshold = st.number_input('Введите пороговое значение вручную', min_value=0.0, max_value=2.0, value=Threshold, format='%.5f')
+        Threshold=1.3e-8
+        visual_threshold = Threshold * 1e+5
+        Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=1.0, value=visual_threshold, step=1e-6, format='%.6f')
+        Threshold = st.number_input('Введите пороговое значение вручную', min_value=0.0, max_value=1.0, value=Threshold, format='%.6f')
+        Threshold /= 1e+5
         score = pd.DataFrame()
         score['Loss'] = losses
         score['Threshold'] = Threshold
