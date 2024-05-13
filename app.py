@@ -300,7 +300,7 @@ if uploaded_file:
   
     elif options =='Получить предсказание':
         st.markdown('ВНИМАНИЕ: данные, передаваемые в модель должны быть без пропусков')
-        st.markdown('## График разделения аномальных и нормальных значений')
+        st.markdown('**График разделения аномальных и нормальных значений**')
         data_fft, columns=prepare_data(data)  
         data_to_tensor = Create_dataset(data_fft)
         data_loader=data_to_tensor.dataset
