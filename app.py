@@ -306,8 +306,8 @@ if uploaded_file:
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
         n_features = data_to_tensor.n_features
-        model = torch.load('lstmae_v3.pth')
-        model = model.to(args.device)
+        model = torch.load('lstmae_v3.pth', map_location=args.device)
+        
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
