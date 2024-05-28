@@ -32,7 +32,7 @@ def prepare_data(data):
        'ProducingGOR_m3_t', 'LiquidViscosity', 'WeightedParticlesFactor_mg_l',
        'MeasureMRM187', 'MeasureMRM188', 'MeasureMRM12', 'MeasureMRM30',
        'MeasureMRM143', 'MeasureMRM144']]
-    tsvd2D = TruncatedSVD(n_components=2)
+    tsvd2D = TruncatedSVD(n_components=3)
     tsvd2D.fit(df)
     df_SVD=pd.DataFrame(tsvd2D.transform(df))
   
@@ -306,7 +306,7 @@ if uploaded_file:
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
         n_features = data_to_tensor.n_features
-        model = torch.load('lstmae_v3.pth', map_location=args.device)
+        model = torch.load('lstmae_3d.pth', map_location=args.device)
         
         
         predictions, losses=predict(model, data_loader)
