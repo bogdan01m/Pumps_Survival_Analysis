@@ -274,7 +274,7 @@ def threshold_plot(score):
     # Обновляем макет графика
     fig.update_layout(
         title='График потерь и порогового значения',
-        xaxis_title='Индекс',
+        xaxis_title='Время',
         yaxis_title='Значение',
         yaxis_type='log',
         legend_title='Легенда'
