@@ -383,7 +383,7 @@ if uploaded_file:
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
         n_features = data_to_tensor.n_features
-        model = torch.load('lstmae_3d.pth', map_location=args.device)
+        model = torch.load('lstmae_fft_only.pth', map_location=args.device)
         
         
         predictions, losses=predict(model, data_loader)
