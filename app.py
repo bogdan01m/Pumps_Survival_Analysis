@@ -332,7 +332,7 @@ def preds_plot_interactive(data_loader, model, columns, seq_len, n_features, dev
 
 
    
-st.title("DPump")
+st.title("Pumps Survival Analysis")
 
 
 st.sidebar.title('Навигация')
