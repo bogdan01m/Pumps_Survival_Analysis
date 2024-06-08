@@ -12,9 +12,8 @@ import torch.nn.functional as F
 import argparse
 import time
 import os
-from scipy.fft import fft
+from scipy.fft import fft, ifft
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.decomposition import TruncatedSVD
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import warnings
@@ -25,23 +24,56 @@ device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 ####################################################################
+#Fast Fourier Tranform
+####################################################################  
+
+def apply_fft(data, columns):
+    # Применяем FFT только к указанным столбцам
+    fft_features = {}
+    for column in columns:
+        if column in data.columns:
+            # Преобразуем данные в числовой тип, игнорируя ошибки
+            numeric_data = pd.to_numeric(data[column], errors='coerce').fillna(0).to_numpy()
+            if numeric_data.ndim == 1:  # Проверяем, что это одномерный массив
+                fft_result = fft(numeric_data)
+                # Извлекаем реальные и мнимые части
+                fft_real = np.real(fft_result)
+                fft_imag = np.imag(fft_result)
+                # Добавляем результаты FFT в словарь
+                fft_features[f'{column}_fft_real'] = fft_real
+                fft_features[f'{column}_fft_imag'] = fft_imag
+    return pd.DataFrame(fft_features)
+
+####################################################################
 #здесь логика загрузки данных 
 ####################################################################    
 def prepare_data(data):
-    df=data[['ReservoirTemperature_c', 'MeasureMRM204', 'MeasureMRM205',
-       'ProducingGOR_m3_t', 'LiquidViscosity', 'WeightedParticlesFactor_mg_l',
-       'MeasureMRM187', 'MeasureMRM188', 'MeasureMRM12', 'MeasureMRM30',
-       'MeasureMRM143', 'MeasureMRM144']]
-    tsvd2D = TruncatedSVD(n_components=3)
-    tsvd2D.fit(df)
-    df_SVD=pd.DataFrame(tsvd2D.transform(df))
-  
+
+    
+
+    fft_columns = ['MeasureMRM12', 'MeasureMRM142', 'MeasureMRM143', 'MeasureMRM187', 
+               'MeasureMRM188', 'MeasureMRM219', 'MeasureMRM204']
+
+    df_fft = apply_fft(data, fft_columns)
+    df_fft=df_fft[['MeasureMRM12_fft_real',
+       'MeasureMRM12_fft_imag', 'MeasureMRM142_fft_real',
+       'MeasureMRM142_fft_imag', 'MeasureMRM143_fft_real',
+       'MeasureMRM143_fft_imag', 'MeasureMRM187_fft_real',
+       'MeasureMRM187_fft_imag', 'MeasureMRM188_fft_real',
+       'MeasureMRM188_fft_imag', 'MeasureMRM219_fft_real',
+       'MeasureMRM219_fft_imag', 'MeasureMRM204_fft_real',
+       'MeasureMRM204_fft_imag']]
     # Создаем экземпляр MinMaxScaler
+    columns_fft=df_fft.columns
     scaler = MinMaxScaler()
-    columns=df.columns
+    
+    df_fft = pd.DataFrame(scaler.fit_transform(df_fft),columns=columns_fft)
+    
     # Нормализуем данные в датафре  йме X
-    data_fft = pd.DataFrame(scaler.fit_transform(df_SVD))
-    return data_fft, columns
+    
+    return df_fft, columns_fft
+
+
 class Create_dataset(Dataset):
     def __init__(self, data, seq_len=1, batch_size=1):
         self.data = data
@@ -251,13 +283,56 @@ def threshold_plot(score):
     # Отображаем график в Streamlit
     st.plotly_chart(fig, use_container_width=True)
     
+def preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device):
+    combo_data_np = torch.cat([batch for batch in data_loader], dim=0).detach().cpu().numpy()
+    combo_data_np = combo_data_np.reshape(-1, seq_len, n_features)
+
+    preds = []
+    with torch.no_grad():
+        model = model.eval()
+        for seq_true in data_loader:
+            seq_true = seq_true.to(device)
+            seq_true = seq_true.reshape((-1, seq_len, n_features))
+
+            seq_pred = model(seq_true)
+            preds.append(seq_pred.cpu().numpy())
+    preds = np.concatenate(preds, axis=0)
+
+    # Создаем макет с подграфиками
+    fig = make_subplots(rows=n_features, cols=1, subplot_titles=columns)
+
+    # Добавляем графики для каждой фичи
+    for i in range(n_features):
+        fig.add_trace(go.Scatter(
+            x=np.arange(combo_data_np.shape[0]),
+            y=combo_data_np[:, :, i].flatten(),
+            mode='lines',
+            name='Original',
+            line=dict(color='darkgoldenrod'),
+            showlegend=i == 0  # Показываем легенду только для первого графика
+        ), row=i+1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=np.arange(preds.shape[0]),
+            y=preds[:, :, i].flatten(),
+            mode='lines',
+            name='Prediction',
+            line=dict(color='blueviolet'),
+            showlegend=i == 0  # Показываем легенду только для первого графика
+        ), row=i+1, col=1)
+
+    # Обновляем общий макет
+    fig.update_layout(height=300 * n_features, showlegend=True, title_text='Оригинальные данные и востановленные моделью')
+
+    # Отображаем график в Streamlit
+    st.plotly_chart(fig, use_container_width=True)
 
 
 
 
 
    
-st.title("DPump")
+st.title("ESP survival analysis")
 
 
 st.sidebar.title('Навигация')
@@ -298,10 +373,12 @@ if uploaded_file:
     #     hist(graph)  
     # elif options == 'Скоринг':   
   
+  
     elif options =='Получить предсказание':
         st.markdown('ВНИМАНИЕ: данные, передаваемые в модель должны быть без пропусков')
         st.markdown('**График разделения аномальных и нормальных значений**')
-        data_fft, columns=prepare_data(data)  
+        data_fft, columns=prepare_data(data) 
+        # show_data(data_fft)  
         data_to_tensor = Create_dataset(data_fft)
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
@@ -311,11 +388,11 @@ if uploaded_file:
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
-        Threshold=1.3e-8
-        visual_threshold = Threshold * 1e+5
-        Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=1.0, value=visual_threshold, step=1e-6, format='%.6f')
+        Threshold=0.003
+        # visual_threshold = Threshold * 1e+1
+        Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=1.0, value=Threshold, step=1e-6, format='%.6f')
         Threshold = st.number_input('Введите пороговое значение вручную', min_value=0.0, max_value=1.0, value=Threshold, format='%.6f')
-        Threshold /= 1e+5
+        # Threshold /= 1e+1
         score = pd.DataFrame()
         score['Loss'] = losses
         score['Threshold'] = Threshold
@@ -328,5 +405,7 @@ if uploaded_file:
         st.markdown('**Результат детектирования аномалий**')
         
         show_data(result) 
-
+        st.markdown('**Графики параметров (оригинал и восстановленные)**')  
+        st.set_option('deprecation.showPyplotGlobalUse', False)
+        st.pyplot(preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device))
         
