@@ -388,7 +388,7 @@ if uploaded_file:
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
-        Threshold=0.003
+        Threshold=0.03
         # visual_threshold = Threshold * 1e+1
         Threshold = st.slider('Пороговое значение', min_value=0.0, max_value=1.0, value=Threshold, step=1e-6, format='%.6f')
         Threshold = st.number_input('Введите пороговое значение вручную', min_value=0.0, max_value=1.0, value=Threshold, format='%.6f')
