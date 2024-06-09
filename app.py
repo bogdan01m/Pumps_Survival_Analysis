@@ -498,31 +498,40 @@ options=['Главная',
 'Обучить модель',
 ])
 # Проверка, был ли загружен файл
-if uploaded_file:
-    # Выбор разделителя для CSV-файла
-    delimiter_option = st.selectbox(
-        'Выберите разделитель для вашего csv-файла:',
-        options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
-        index=0  # Индекс выбранного по умолчанию разделителя
-    )
+# Загрузка файла
+uploaded_file = st.file_uploader("Загрузите CSV файл", type="csv")
 
-    # Чтение данных с выбранным разделителем
-    data = pd.read_csv(uploaded_file, low_memory=False, delimiter=delimiter_option)
-else:
-    # Если файл не был загружен, используем файл по умолчанию
-    default_file_path = 'test.csv'
-    st.warning(f'Файл не был загружен. Используется файл по умолчанию: {default_file_path}')
+# Выбор разделителя для CSV-файла
+delimiter_option = st.selectbox(
+    'Выберите разделитель для вашего csv-файла:',
+    options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
+    index=0  # Индекс выбранного по умолчанию разделителя
+)
+
+    if uploaded_file:
+        # Отладка: Вывод информации о загруженном файле
+        st.write(f"Загружен файл: {uploaded_file.name}")
+        
+        # Чтение данных с выбранным разделителем
+        try:
+            data = pd.read_csv(uploaded_file, low_memory=False, delimiter=delimiter_option)
+            st.markdown('**Ваши данные**')
+            show_data(data)
+        except Exception as e:
+            st.error(f"Ошибка при чтении файла: {e}")
+    else:
+        # Если файл не был загружен, используем файл по умолчанию
+        default_file_path = 'test.csv'
+        st.warning(f'Файл не был загружен. Используется файл по умолчанию: {default_file_path}')
+        
+        # Чтение данных с выбранным разделителем
+        try:
+            data = pd.read_csv(default_file_path, low_memory=False, delimiter=delimiter_option)
+            st.markdown('**Ваши данные**')
+            show_data(data)
+        except Exception as e:
+            st.error(f"Ошибка при чтении файла: {e}")
     
-    # Выбор разделителя для CSV-файла
-    delimiter_option = st.selectbox(
-        'Выберите разделитель для файла по умолчанию:',
-        options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
-        index=0  # Индекс выбранного по умолчанию разделителя
-    )
-
-    # Чтение данных с выбранным разделителем
-    data = pd.read_csv(default_file_path, low_memory=False, delimiter=delimiter_option)
-
     st.markdown('**Ваши данные**')
     show_data(data) 
         # Получить seq_len и n_features из первого элемента dataset
