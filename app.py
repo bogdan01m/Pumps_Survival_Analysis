@@ -651,7 +651,7 @@ else:
         model = model.to(args.device)
                 # Кнопка для обучения модели
         if st.button('Обучить модель'):
-            model, history = train_model(model, train_loader, args.epoch, n_features, args)
+            model, history = train_model(model, train_loader, args.epoch, seq_len,n_features, args)
             st.success('Модель успешно обучена!')
 
             # Отображение истории обучения
