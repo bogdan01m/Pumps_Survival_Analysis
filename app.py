@@ -542,8 +542,8 @@ else:
         # Загрузка основной модели
         # Загрузка основной модели
         def load_main_model(path='lstmae_fft_only.pth'):
-            model = torch.load(path)
-            model = model.to(args.device)
+            model = torch.load(path, map_location=device)
+            
             return model
 
         # Интерфейс Streamlit
@@ -563,8 +563,8 @@ else:
         if st.write('Загрузить другую модель'):
             if model_path is not None:
                 try:
-                    model = torch.load(model_path)
-                    model = model.to(args.device)
+                    model = torch.load(model_path, map_location=device)
+                    
                     st.success('Модель успешно загружена!')
                 except Exception as e:
                     st.error(f'Ошибка при загрузке модели: {e}')
