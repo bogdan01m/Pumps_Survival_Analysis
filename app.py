@@ -288,8 +288,7 @@ def train_data(data):
     df_fft = pd.DataFrame(scaler.fit_transform(df_fft),columns=columns_fft)
     combined_data = pd.concat([normal_data, df_fft], axis=1)
     return combined_data  
-
-def train_model(model, train_data, n_epochs, seq_len, n_features, args):
+def train_model(model, train_loader, n_epochs, seq_len, n_features, args):
     early_stopping = EarlyStopping(patience=args.patience)
     # Установка режима обучения
     model.train()
@@ -313,9 +312,6 @@ def train_model(model, train_data, n_epochs, seq_len, n_features, args):
         model = model.train()
         ts = time.time()
         train_losses = []
-
-        # Создание DataLoader для обучающего набора данных
-        train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
 
         for seq_true in train_loader:
             optimizer.zero_grad()
@@ -348,7 +344,15 @@ def train_model(model, train_data, n_epochs, seq_len, n_features, args):
         # Обновление прогресса
         progress_bar.progress(epoch / n_epochs)
 
-    return model, history
+        # Сохранение лучшей модели
+        if train_loss < best_val_loss:
+            best_val_loss = train_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+
+    # Загрузка весов лучшей модели
+    model.load_state_dict(best_model_wts)
+
+    return model.eval(), history
 
     st.title('Обучение модели')
     st.write('Нажмите кнопку для обучения модели.')
