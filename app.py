@@ -12,16 +12,21 @@ import torch.nn.functional as F
 import argparse
 import time
 import os
+import argparse
+import time
+from tqdm import tqdm
 from scipy.fft import fft, ifft
 from sklearn.preprocessing import MinMaxScaler
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import warnings
+from catboost import CatBoostClassifier
+import catboost as cb
 warnings.filterwarnings('ignore')
 
 
-device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ####################################################################
 #Fast Fourier Tranform
@@ -51,9 +56,13 @@ def prepare_data(data):
 
     
 
+    # df=data[['MeasureMRM12', 'MeasureMRM142', 'MeasureMRM143', 'MeasureMRM187', 
+    #            'MeasureMRM188', 'MeasureMRM219', 'MeasureMRM204']]
     fft_columns = ['MeasureMRM12', 'MeasureMRM142', 'MeasureMRM143', 'MeasureMRM187', 
                'MeasureMRM188', 'MeasureMRM219', 'MeasureMRM204']
-
+    # tsvd2D = TruncatedSVD(n_components=3)
+    # tsvd2D.fit(df)
+    # df_SVD=pd.DataFrame(tsvd2D.transform(df))
     df_fft = apply_fft(data, fft_columns)
     df_fft=df_fft[['MeasureMRM12_fft_real',
        'MeasureMRM12_fft_imag', 'MeasureMRM142_fft_real',
@@ -182,6 +191,7 @@ class LSTM_AUTO_ENCODER(nn.Module):
         return x
 
 
+
 seed = 42
 np.random.seed(seed)
 torch.manual_seed(seed)
@@ -189,7 +199,7 @@ torch.manual_seed(seed)
 parser = argparse.ArgumentParser()
 args = parser.parse_args('')
 
-args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # ===== data loading ==== #
 args.batch_size = 1
@@ -205,7 +215,150 @@ args.use_bn = False  # batch normalization
 
 # ==== optimizer & training  # ====
 args.lr = 0.001
-args.epoch = 180
+args.epoch = 1
+args.patience = 20
+
+
+class EarlyStopping:
+    def __init__(self, patience=20, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+        elif val_loss > self.best_loss + self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
+            
+            
+####################################################################
+#Дообучение модели
+####################################################################      
+def remove_outliers_and_interpolate(column, threshold):
+    Q1 = np.percentile(column.dropna(), 25)
+    Q3 = np.percentile(column.dropna(), 75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - threshold * IQR
+    upper_bound = Q3 + threshold * IQR
+
+    filtered_column = column[(column >= lower_bound) & (column <= upper_bound)]
+    interpolated_column = filtered_column.interpolate(method='nearest')
+    return interpolated_column
+
+
+
+def train_data(data):
+    data = data[
+    (data['MeasureMRM12'] <= 2000) &
+    (data['MeasureMRM143'] <= 150) &
+    (data['MeasureMRM187'] >= 50) & (data['MeasureMRM187'] <= 300) &
+    (data['MeasureMRM188'] <= 400)
+]
+    threshold = 3.5  # Новое пороговое значение
+    columns_names = ['MeasureMRM204']
+
+    # Применение функции к указанным колонкам
+    for column_name in columns_names:
+        if column_name in data.columns:
+            data[column_name] = remove_outliers_and_interpolate(data[column_name], threshold)
+    data=data.interpolate(method='pad')        
+    fft_columns = ['MeasureMRM12', 'MeasureMRM142', 'MeasureMRM143', 'MeasureMRM187', 
+               'MeasureMRM188', 'MeasureMRM219', 'MeasureMRM204']
+    normal_data=data[(data['daysToFailure'] > 30)]
+    df_fft = apply_fft(normal_data, fft_columns)
+    df_fft=df_fft[['MeasureMRM12_fft_real',
+       'MeasureMRM12_fft_imag', 'MeasureMRM142_fft_real',
+       'MeasureMRM142_fft_imag', 'MeasureMRM143_fft_real',
+       'MeasureMRM143_fft_imag', 'MeasureMRM187_fft_real',
+       'MeasureMRM187_fft_imag', 'MeasureMRM188_fft_real',
+       'MeasureMRM188_fft_imag', 'MeasureMRM219_fft_real',
+       'MeasureMRM219_fft_imag', 'MeasureMRM204_fft_real',
+       'MeasureMRM204_fft_imag']]
+    # Создаем экземпляр MinMaxScaler
+    columns_fft=df_fft.columns
+    scaler = MinMaxScaler()
+    
+    df_fft = pd.DataFrame(scaler.fit_transform(df_fft),columns=columns_fft)
+    combined_data = pd.concat([normal_data, df_fft], axis=1)
+    return combined_data  
+
+def train_model(model,train_loader, n_epochs, n_features, args):
+    early_stopping = EarlyStopping(patience=args.patience)
+    # Установка режима обучения
+    model.train()
+    
+    # Оптимизатор и функция потерь
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    criterion = nn.MSELoss(reduction='sum').to(args.device)
+
+    # История обучения
+    history = {'train': [], 'val': []}
+
+    # Переменная для отслеживания лучшей модели
+    best_model_wts = None
+    best_val_loss = float('inf')
+
+    # Цикл обучения
+    for epoch in range(1, n_epochs + 1):
+        model = model.train()
+        ts = time.time()
+        train_losses = []
+
+        # Создание DataLoader для обучающего набора данных
+        train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
+        train_loader = tqdm(train_loader, desc=f'Epoch {epoch}', leave=False)
+
+        for seq_true in train_loader:
+            optimizer.zero_grad()
+
+            # Изменение формы входных данных на (batch_size, seq_len, n_features)
+            seq_true = seq_true.reshape((-1, seq_len, n_features))
+            seq_true = seq_true.float().to(args.device)
+
+            seq_pred = model(seq_true)
+    
+            loss = criterion(seq_pred, seq_true)
+            
+            loss.backward()
+            optimizer.step()
+
+            train_losses.append(loss.item())
+            # Обновление tqdm
+            train_loader.set_postfix(train_loss=np.mean(train_losses))
+
+
+        te = time.time()
+        train_loss = np.mean(train_losses)
+        history['train'].append(train_loss)
+        
+        # Вызов EarlyStopping и проверка на необходимость остановки
+        early_stopping(train_loss)
+        if early_stopping.early_stop:
+            print(f"Early stopping at epoch {epoch}")
+            break
+        
+        print(f"Epoch: {epoch}  train loss: {train_loss} time: {te-ts} ")
+        
+
+        # Сохранение лучшей модели
+        if train_loss < best_val_loss:
+            best_val_loss = train_loss
+            best_model_wts = copy.deepcopy(model.state_dict())
+
+    # Загрузка весов лучшей модели
+    model.load_state_dict(best_model_wts)
+
+    return model.eval(), history
+
+          
 ####################################################################
 #Предсказание модели
 ####################################################################
@@ -236,10 +389,6 @@ def show_data(dataframe):
     # st.header('Данные')
     st.write(dataframe)
 
-def stats(dataframe):
-    st.header('Статистика')
-    st.write(dataframe.describe())    
-    
     
 
 def threshold_plot(score):
@@ -273,16 +422,16 @@ def threshold_plot(score):
     
     # Обновляем макет графика
     fig.update_layout(
-        title='График потерь и порогового значения',
-        xaxis_title='Время',
-        yaxis_title='Значение',
+        title='Детектирование аномалий',
+        xaxis_title='Время (дней)',
+        yaxis_title='MSE loss',
         yaxis_type='log',
         legend_title='Легенда'
     )
     
     # Отображаем график в Streamlit
     st.plotly_chart(fig, use_container_width=True)
-    
+
 def preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device):
     combo_data_np = torch.cat([batch for batch in data_loader], dim=0).detach().cpu().numpy()
     combo_data_np = combo_data_np.reshape(-1, seq_len, n_features)
@@ -328,11 +477,8 @@ def preds_plot_interactive(data_loader, model, columns, seq_len, n_features, dev
     st.plotly_chart(fig, use_container_width=True)
 
 
-
-
-
    
-st.title("Pumps Survival Analysis")
+st.title("Pump Survival Analisys")
 
 
 st.sidebar.title('Навигация')
@@ -341,11 +487,12 @@ uploaded_file=st.sidebar.file_uploader('Загрузите ваш файл')
 
 options= st.sidebar.radio('Опции:',
 options=['Главная',
-'Статистика',
-'Получить предсказание',
+'Интеллектуальный анализ выживаемости',
+'Обучить модель',
 ])
+# Проверка, был ли загружен файл
 if uploaded_file:
-    #считываем данные 
+    # Выбор разделителя для CSV-файла
     delimiter_option = st.selectbox(
         'Выберите разделитель для вашего csv-файла:',
         options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
@@ -354,17 +501,27 @@ if uploaded_file:
 
     # Чтение данных с выбранным разделителем
     data = pd.read_csv(uploaded_file, low_memory=False, delimiter=delimiter_option)
+else:
+    # Если файл не был загружен, используем файл по умолчанию
+    default_file_path = 'test.csv'
+    st.warning(f'Файл не был загружен. Используется файл по умолчанию: {default_file_path}')
+    
+    # Выбор разделителя для CSV-файла
+    delimiter_option = st.selectbox(
+        'Выберите разделитель для файла по умолчанию:',
+        options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
+        index=0  # Индекс выбранного по умолчанию разделителя
+    )
+
+    # Чтение данных с выбранным разделителем
+    data = pd.read_csv(default_file_path, low_memory=False, delimiter=delimiter_option)
+
     st.markdown('**Ваши данные**')
     show_data(data) 
         # Получить seq_len и n_features из первого элемента dataset
 
 
        
-
-    if options =='Статистика':
-        st.markdown('**Ваша статистика**')
-        stats(data)
-         
  
    
     # elif options =='Гистограмма функции потерь':
@@ -373,8 +530,7 @@ if uploaded_file:
     #     hist(graph)  
     # elif options == 'Скоринг':   
   
-  
-    elif options =='Получить предсказание':
+    if options =='Интеллектуальный анализ выживаемости':
         st.markdown('ВНИМАНИЕ: данные, передаваемые в модель должны быть без пропусков')
         st.markdown('**График разделения аномальных и нормальных значений**')
         data_fft, columns=prepare_data(data) 
@@ -383,8 +539,42 @@ if uploaded_file:
         data_loader=data_to_tensor.dataset
         seq_len = data_to_tensor.seq_len
         n_features = data_to_tensor.n_features
-        model = torch.load('lstmae_fft_only.pth', map_location=args.device)
+        # Загрузка основной модели
+        # Загрузка основной модели
+        def load_main_model(path='lstmae_fft_only.pth'):
+            model = torch.load(path)
+            model = model.to(args.device)
+            return model
+
+        # Интерфейс Streamlit
+        st.write('**Загрузка модели**')
+
+        # Автоматическая загрузка основной модели при запуске
+        model = load_main_model()
+        st.success('Основная модель успешно загружена!')
+
+        # Кнопка для повторной загрузки основной модели
+        if st.button('Загрузить основную модель снова'):
+            model = load_main_model()
+            st.success('Основная модель успешно загружена!')
+
+        # Опция для загрузки другой модели
+        model_path = st.file_uploader('Загрузите модель')
+        if st.write('Загрузить другую модель'):
+            if model_path is not None:
+                try:
+                    model = torch.load(model_path)
+                    model = model.to(args.device)
+                    st.success('Модель успешно загружена!')
+                except Exception as e:
+                    st.error(f'Ошибка при загрузке модели: {e}')
+            else:
+                st.error('Пожалуйста, загрузите файл модели.')
+
         
+        
+        # model = torch.load('lstmae_fft_only.pth')
+        # model = model.to(args.device)
         
         predictions, losses=predict(model, data_loader)
         st.markdown('**Выберите пороговое значение**')
@@ -398,14 +588,94 @@ if uploaded_file:
         score['Threshold'] = Threshold
         score['Anomaly'] = score['Loss'] > score['Threshold']
         
+        
         # Объединяем 'score' с 'data', помещая 'score' слева от последней колонки в 'data'
         result = pd.concat([score, data], axis=1)
         threshold_plot(score)
         # st.set_option('deprecation.showPyplotGlobalUse', False)
+        
+       
+        #Catboost на причины отказов
+       
+        model_path = 'catboost_model_сuz.cbm'
+        catboost_model = cb.CatBoostClassifier()
+        catboost_model.load_model(model_path)
+        X=data[['MeasureMRM12', 'MeasureMRM142', 'MeasureMRM143', 'MeasureMRM187', 
+               'MeasureMRM188', 'MeasureMRM219', 'MeasureMRM204']]
+        catboost_pred_proba_test = catboost_model.predict_proba(X)
+        # Получаем вероятности предсказаний для первой строки из тестовой выборки
+        first_row_proba = catboost_pred_proba_test[0]
+
+        # # Создаем список из пар (класс, вероятность)
+        class_proba_pairs = list(zip(catboost_model.classes_, first_row_proba))
+
+        # # Сортируем список по вероятностям в порядке убывания
+        sorted_class_proba_pairs = sorted(class_proba_pairs, key=lambda x: x[1], reverse=True)
+
+        # # Преобразуем вероятности в проценты и округляем до двух знаков после запятой
+        top_3_class_proba = [(cls, round(proba * 100, 2)) for cls, proba in sorted_class_proba_pairs[:3]]
+
+        # # Выводим топ-5 вероятных значений с форматированием
+        st.markdown("**Возможные осложнения:**")
+        for cls, proba in top_3_class_proba:
+            st.markdown(f"'{cls}' с вероятностью {proba}%")
+        
         st.markdown('**Результат детектирования аномалий**')
         
         show_data(result) 
         st.markdown('**Графики параметров (оригинал и восстановленные)**')  
         st.set_option('deprecation.showPyplotGlobalUse', False)
         st.pyplot(preds_plot_interactive(data_loader, model, columns, seq_len, n_features, device))
-        
+    elif options =='Обучить модель':
+        st.markdown('**Данные для обучения**')
+        train=train_data(data)
+        train=train[[
+            'MeasureMRM12_fft_real',
+       'MeasureMRM12_fft_imag', 'MeasureMRM142_fft_real',
+       'MeasureMRM142_fft_imag', 'MeasureMRM143_fft_real',
+       'MeasureMRM143_fft_imag', 'MeasureMRM187_fft_real',
+       'MeasureMRM187_fft_imag', 'MeasureMRM188_fft_real',
+       'MeasureMRM188_fft_imag', 'MeasureMRM219_fft_real',
+       'MeasureMRM219_fft_imag', 'MeasureMRM204_fft_real',
+       'MeasureMRM204_fft_imag'
+       ]]
+        show_data(train) 
+        train_to_tensor = Create_dataset(train)
+        train_loader=train_to_tensor.dataset
+        seq_len = train_to_tensor.seq_len
+        n_features = train_to_tensor.n_features
+                # 1. Извлечь данные из train_loader в виде numpy массива
+        train_data = []
+        for batch in train_loader:
+            batch = batch.squeeze(1) 
+            batch = batch.numpy()  
+            for seq in batch:
+                train_data.append(seq)
+        train_data = np.array(train_data)
+
+     
+        train_data = train_data.reshape(-1, seq_len, n_features)
+        model = LSTM_AUTO_ENCODER(seq_len=seq_len, n_features=n_features, args=args)
+        model = model.to(args.device)
+                # Кнопка для обучения модели
+        if st.button('Обучить модель'):
+            model, history = train_model(model, train_loader, args.epoch, n_features, args)
+            st.success('Модель успешно обучена!')
+
+            # Отображение истории обучения
+            st.write('История обучения:')
+            st.write(history)
+                # Функция для сохранения модели
+        def save_model(model, path='model.pth'):
+            torch.save(model.state_dict(), path)
+            st.success('Модель успешно сохранена!')    
+            # Сохранение модели после обучения
+            save_model(model)
+
+        # Кнопка для загрузки модели
+        if st.button('Загрузить модель'):
+            model_path = st.text_input('Введите путь к модели', 'model.pth')
+            if st.button('Загрузить'):
+                model.load_state_dict(torch.load(model_path))
+                model.eval()  # Переключите модель в режим оценки
+                st.success('Модель успешно загружена!')
