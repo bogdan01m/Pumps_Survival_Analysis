@@ -10,3 +10,4 @@ matplotlib
 argparse
 scikit-learn
 scipy
+catboost
