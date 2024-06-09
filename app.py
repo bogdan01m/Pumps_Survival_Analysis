@@ -21,6 +21,7 @@ from plotly.subplots import make_subplots
 import warnings
 from catboost import CatBoostClassifier
 import catboost as cb
+import io
 warnings.filterwarnings('ignore')
 
 
