@@ -672,16 +672,18 @@ else:
             st.write('История обучения:')
             st.write(history)
                 # Функция для сохранения модели
+        # Функция для сохранения модели
         def save_model(model, path='model.pth'):
             torch.save(model.state_dict(), path)
             st.success('Модель успешно сохранена!')    
-            # Сохранение модели после обучения
-            save_model(model)
+        
+        # Сохранение модели после обучения
+        save_model(model)
 
-        # Кнопка для загрузки модели
-        if st.button('Загрузить модель'):
-            model_path = st.text_input('Введите путь к модели', 'model.pth')
-            if st.button('Загрузить'):
-                model.load_state_dict(torch.load(model_path))
-                model.eval()  # Переключите модель в режим оценки
-                st.success('Модель успешно загружена!')
+    # Кнопка для загрузки модели
+    st.write('Загрузите модель:')
+    uploaded_file = st.file_uploader("Выберите файл модели", type=["pth"])
+    if uploaded_file is not None:
+        model.load_state_dict(torch.load(uploaded_file))
+        model.eval()  # Переключите модель в режим оценки
+        st.success('Модель успешно загружена!')
