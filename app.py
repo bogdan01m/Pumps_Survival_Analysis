@@ -316,7 +316,6 @@ def train_model(model, train_data, n_epochs, seq_len, n_features, args):
 
         # Создание DataLoader для обучающего набора данных
         train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
-       
 
         for seq_true in train_loader:
             optimizer.zero_grad()
@@ -350,6 +349,16 @@ def train_model(model, train_data, n_epochs, seq_len, n_features, args):
         progress_bar.progress(epoch / n_epochs)
 
     return model, history
+
+    st.title('Обучение модели')
+    st.write('Нажмите кнопку для обучения модели.')
+
+    if st.button('Обучить модель'):
+        model, history = train_model(model, train_data, args.epoch, seq_len, n_features, args)
+        st.success('Модель успешно обучена!')
+
+        # Отображение истории обучения
+        st.write(history)
 
           
 ####################################################################
