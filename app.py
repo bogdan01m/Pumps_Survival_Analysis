@@ -202,7 +202,7 @@ args = parser.parse_args('')
 args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # ===== data loading ==== #
-args.batch_size = 1
+args.batch_size = 16
 
 # ==== model capacity ==== #
 args.n_layers = 1
@@ -215,7 +215,7 @@ args.use_bn = False  # batch normalization
 
 # ==== optimizer & training  # ====
 args.lr = 0.001
-args.epoch = 1
+args.epoch = 30
 args.patience = 20
 
 
@@ -355,15 +355,6 @@ def train_model(model, train_loader, n_epochs, seq_len, n_features, args):
 
     return model.eval(), history
 
-    st.title('Обучение модели')
-    st.write('Нажмите кнопку для обучения модели.')
-
-    if st.button('Обучить модель'):
-        model, history = train_model(model, train_data, args.epoch, seq_len, n_features, args)
-        st.success('Модель успешно обучена!')
-
-        # Отображение истории обучения
-        st.write(history)
 
           
 ####################################################################
@@ -490,14 +481,17 @@ st.title("Pump Survival Analisys")
 
 st.sidebar.title('Навигация')
 
-uploaded_file=st.sidebar.file_uploader('Загрузите ваш файл')
 
 options= st.sidebar.radio('Опции:',
 options=['Главная',
 'Интеллектуальный анализ выживаемости',
 'Обучить модель',
 ])
-# Проверка, был ли загружен файл
+
+# Инициализация сессионного состояния
+if 'file' not in st.session_state:
+    st.session_state['file'] = None
+
 # Загрузка файла
 uploaded_file = st.file_uploader("Загрузите CSV файл", type="csv")
 
@@ -508,33 +502,47 @@ delimiter_option = st.selectbox(
     index=0  # Индекс выбранного по умолчанию разделителя
 )
 
-    if uploaded_file:
-        # Выбор разделителя для CSV-файла
-        delimiter_option = st.selectbox(
-            'Выберите разделитель для вашего csv-файла:',
-            options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
-            index=0  # Индекс выбранного по умолчанию разделителя
-        )
+if uploaded_file:
+    # Отладка: Вывод информации о загруженном файле
+    st.write(f"Загружен файл: {uploaded_file.name}")
     
-        # Чтение данных с выбранным разделителем
+    # Сохранение файла в сессионное состояние
+    st.session_state['file'] = uploaded_file
+    
+    # Чтение данных с выбранным разделителем
+    try:
         data = pd.read_csv(uploaded_file, low_memory=False, delimiter=delimiter_option)
-    else:
-        # Если файл не был загружен, используем файл по умолчанию
-        default_file_path = 'test.csv'
-        st.warning(f'Файл не был загружен. Используется файл по умолчанию: {default_file_path}')
-        
-        # Выбор разделителя для CSV-файла
-        delimiter_option = st.selectbox(
-            'Выберите разделитель для файла по умолчанию:',
-            options=[',', ';', '\t', '|', ' '],  # Список возможных разделителей
-            index=0  # Индекс выбранного по умолчанию разделителя
-        )
-    
-        # Чтение данных с выбранным разделителем
-        data = pd.read_csv(default_file_path, low_memory=False, delimiter=delimiter_option)
-        
         st.markdown('**Ваши данные**')
-        show_data(data) 
+        show_data(data)
+    except Exception as e:
+        st.error(f"Ошибка при чтении файла: {e}")
+else:
+    # Если файл не был загружен, используем файл по умолчанию
+    default_file_path = 'test.csv'
+    st.warning(f'Файл не был загружен. Используется файл по умолчанию: {default_file_path}')
+    
+    # Чтение данных с выбранным разделителем
+    try:
+        data = pd.read_csv(default_file_path, low_memory=False, delimiter=delimiter_option)
+        st.session_state['file'] = default_file_path  # Сохранение пути к файлу в сессионное состояние
+        st.markdown('**Ваши данные**')
+        show_data(data)
+    except Exception as e:
+        st.error(f"Ошибка при чтении файла: {e}")
+
+# Использование данных из сессионного состояния в других частях приложения
+if st.session_state['file'] is not None:
+    st.markdown('**Глобальные данные**')
+    try:
+        if isinstance(st.session_state['file'], str):
+            # Если это путь к файлу по умолчанию
+            data = pd.read_csv(st.session_state['file'], low_memory=False, delimiter=delimiter_option)
+        else:
+            # Если это загруженный файл
+            data = pd.read_csv(st.session_state['file'], low_memory=False, delimiter=delimiter_option)
+        show_data(data)
+    except Exception as e:
+        st.warning(f"Warning: {e}")
             # Получить seq_len и n_features из первого элемента dataset
 
 
@@ -701,4 +709,4 @@ delimiter_option = st.selectbox(
                 data=buffer,
                 file_name="model.pth",
                 mime="application/octet-stream"
-            )
+)
