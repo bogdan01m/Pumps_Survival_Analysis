@@ -681,6 +681,7 @@ else:
             save_model(model)
         
             # Сохранение модели и предоставление кнопки для скачивания
+        
             buffer = io.BytesIO()
             torch.save(model.state_dict(), buffer)
             buffer.seek(0)
@@ -689,4 +690,4 @@ else:
                 data=buffer,
                 file_name="model.pth",
                 mime="application/octet-stream"
-                )
+            )
