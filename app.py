@@ -14,7 +14,6 @@ import time
 import os
 import argparse
 import time
-from tqdm import tqdm
 from scipy.fft import fft, ifft
 from sklearn.preprocessing import MinMaxScaler
 import plotly.graph_objs as go
@@ -290,7 +289,7 @@ def train_data(data):
     combined_data = pd.concat([normal_data, df_fft], axis=1)
     return combined_data  
 
-def train_model(model,train_loader, n_epochs, n_features, args):
+def train_model(model, train_data, n_epochs, seq_len, n_features, args):
     early_stopping = EarlyStopping(patience=args.patience)
     # Установка режима обучения
     model.train()
@@ -306,6 +305,9 @@ def train_model(model,train_loader, n_epochs, n_features, args):
     best_model_wts = None
     best_val_loss = float('inf')
 
+    # Прогресс-бар Streamlit
+    progress_bar = st.progress(0)
+
     # Цикл обучения
     for epoch in range(1, n_epochs + 1):
         model = model.train()
@@ -314,7 +316,6 @@ def train_model(model,train_loader, n_epochs, n_features, args):
 
         # Создание DataLoader для обучающего набора данных
         train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
-        train_loader = tqdm(train_loader, desc=f'Epoch {epoch}', leave=False)
 
         for seq_true in train_loader:
             optimizer.zero_grad()
@@ -331,9 +332,6 @@ def train_model(model,train_loader, n_epochs, n_features, args):
             optimizer.step()
 
             train_losses.append(loss.item())
-            # Обновление tqdm
-            train_loader.set_postfix(train_loss=np.mean(train_losses))
-
 
         te = time.time()
         train_loss = np.mean(train_losses)
@@ -342,21 +340,15 @@ def train_model(model,train_loader, n_epochs, n_features, args):
         # Вызов EarlyStopping и проверка на необходимость остановки
         early_stopping(train_loss)
         if early_stopping.early_stop:
-            print(f"Early stopping at epoch {epoch}")
+            st.write(f"Early stopping at epoch {epoch}")
             break
         
-        print(f"Epoch: {epoch}  train loss: {train_loss} time: {te-ts} ")
-        
+        st.write(f"Epoch: {epoch}  train loss: {train_loss} time: {te-ts} ")
 
-        # Сохранение лучшей модели
-        if train_loss < best_val_loss:
-            best_val_loss = train_loss
-            best_model_wts = copy.deepcopy(model.state_dict())
+        # Обновление прогресса
+        progress_bar.progress(epoch / n_epochs)
 
-    # Загрузка весов лучшей модели
-    model.load_state_dict(best_model_wts)
-
-    return model.eval(), history
+    return model, history
 
           
 ####################################################################
