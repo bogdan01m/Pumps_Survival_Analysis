@@ -11,3 +11,4 @@ argparse
 scikit-learn
 scipy
 catboost
+tqdm
