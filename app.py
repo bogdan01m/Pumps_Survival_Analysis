@@ -665,25 +665,28 @@ else:
         model = model.to(args.device)
                 # Кнопка для обучения модели
         if st.button('Обучить модель'):
-            model, history = train_model(model, train_loader, args.epoch, seq_len,n_features, args)
+            model, history = train_model(model, train_loader, args.epoch, seq_len, n_features, args)
             st.success('Модель успешно обучена!')
-
+        
             # Отображение истории обучения
             st.write('История обучения:')
             st.write(history)
-                # Функция для сохранения модели
-        # Функция для сохранения модели
-        def save_model(model, path='model.pth'):
-            torch.save(model.state_dict(), path)
-            st.success('Модель успешно сохранена!')    
         
-        # Сохранение модели после обучения
-        save_model(model)
-
-    # Кнопка для загрузки модели
-    st.write('Загрузите модель:')
-    uploaded_file = st.file_uploader("Выберите файл модели", type=["pth"])
-    if uploaded_file is not None:
-        model.load_state_dict(torch.load(uploaded_file))
-        model.eval()  # Переключите модель в режим оценки
-        st.success('Модель успешно загружена!')
+            # Функция для сохранения модели
+            def save_model(model, path='model.pth'):
+                torch.save(model.state_dict(), path)
+                st.success('Модель успешно сохранена!')    
+        
+            # Сохранение модели после обучения
+            save_model(model)
+        
+            # Сохранение модели и предоставление кнопки для скачивания
+            buffer = io.BytesIO()
+            torch.save(model.state_dict(), buffer)
+            buffer.seek(0)
+            st.download_button(
+                label="Скачать модель",
+                data=buffer,
+                file_name="model.pth",
+                mime="application/octet-stream"
+                )
