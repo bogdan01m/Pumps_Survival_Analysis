@@ -316,6 +316,7 @@ def train_model(model, train_data, n_epochs, seq_len, n_features, args):
 
         # Создание DataLoader для обучающего набора данных
         train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=False)
+       
 
         for seq_true in train_loader:
             optimizer.zero_grad()
