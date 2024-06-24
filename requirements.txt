@@ -3,11 +3,11 @@ pandas
 numpy
 plotly_express
 torch
-numpy
+numpy==1.21.0
 pandas
 seaborn
 matplotlib
 argparse
 scikit-learn
 scipy
-catboost
+catboost==1.0.4
