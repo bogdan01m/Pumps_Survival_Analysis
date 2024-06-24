@@ -1,4 +1,4 @@
---upgrade pip
+upgrade pip
 streamlit
 pandas
 numpy
